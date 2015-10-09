@@ -64,7 +64,8 @@ namespace WinRtPushoverClient
                     var credential = vault.FindAllByResource("PushoverDevice_"+ this.deviceInfo.Name +" _UserSecret").FirstOrDefault();
                     if (null != credential)
                     {
-                        var secret = credential.Password;
+
+                        var secret = vault.Retrieve("PushoverDevice_" + this.deviceInfo.Name + " _UserSecret", "UserSecret").Password;
                         pushoverApi.UserSecret = secret;
                     }
                     isAuthenticated = true;
@@ -81,9 +82,9 @@ namespace WinRtPushoverClient
 
         public IAsyncOperation<AuthenticationResult> Authenticate(string username, string password)
         {
-            return Task.Run(() =>
+            return Task.Run(async() =>
             {
-                this.pushoverApi.PopulateUserSecretFromServer(username, password);
+                await this.pushoverApi.PopulateUserSecretFromServer(username, password);
                 var vault = new PasswordVault();
                 var credential = new PasswordCredential("PushoverDevice_" + this.deviceInfo.Name + " _UserSecret", "UserSecret", this.pushoverApi.UserSecret);
                 vault.Add(credential);
@@ -93,31 +94,31 @@ namespace WinRtPushoverClient
 
         public IAsyncOperation<IEnumerable<NotificationMessage>> Start()
         {
-            if (!isAuthenticated)
+            return Task.Run(async () =>
             {
-                throw new InvalidOperationException("Client not authenticated, call Authenticate method prior to starting");
-            }
-
-            return Task.Run(() =>
-            {
-                var settings = ApplicationData.Current.LocalSettings;
-                var deviceId = settings.Values[this.deviceInfo.Name + "_DeviceId"].ToString();
-
-                // Device needs registration
-                if (null == deviceId)
-                {
-                    this.deviceInfo = this.pushoverApi.RegisterDevice(this.deviceInfo.Name);
-                }
-                else
-                {
-                    this.deviceInfo.Id = deviceId;
-                }
-
-                this.pushoverApi.Device = this.deviceInfo;
-
-                var startupMessages = this.pushoverApi.GetMessages();
+                await this.checkDeviceRegistered();
+                var startupMessages = await this.pushoverApi.GetMessages();
                 return startupMessages.AsEnumerable();
             }).AsAsyncOperation();
+        }
+
+        private async Task checkDeviceRegistered()
+        {
+            var settings = ApplicationData.Current.LocalSettings;
+            var deviceId = settings.Values[this.deviceInfo.Name + "_DeviceId"];
+
+            // Device needs registration
+            if (null == deviceId)
+            {
+                this.deviceInfo = await this.pushoverApi.RegisterDevice(this.deviceInfo.Name);
+                settings.Values.Add(this.deviceInfo.Name + "_DeviceId", this.deviceInfo.Id);
+            }
+            else
+            {
+                this.deviceInfo.Id = deviceId.ToString();
+            }
+
+            this.pushoverApi.Device = this.deviceInfo;
         }
     }
 }

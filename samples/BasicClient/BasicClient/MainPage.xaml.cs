@@ -38,6 +38,11 @@ namespace BasicClient
             switch(initResult)
             {
                 case InitializationResult.Success:
+                    var messages = await this.pushoverClient.Start();
+                    foreach (var msg in messages)
+                    {
+                        this.Messages.Items.Add(msg.Title);
+                    }
                     break;
                 case InitializationResult.AuthenticationRequired:
                     await new MessageDialog("Authentication required").ShowAsync();
@@ -48,6 +53,11 @@ namespace BasicClient
         private async void Button_Click(object sender, RoutedEventArgs e)
         {
             await this.pushoverClient.Authenticate(this.userNameTextbox.Text, this.passwordTextbox.Password);
+            var messages = await this.pushoverClient.Start();
+            foreach(var msg in messages)
+            {
+                this.Messages.Items.Add(msg.Title);
+            }
         }
     }
 }

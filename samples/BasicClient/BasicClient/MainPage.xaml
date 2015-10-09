@@ -9,10 +9,13 @@
     Loaded="Page_Loaded">
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <StackPanel Orientation="Horizontal">
+        <StackPanel Orientation="Vertical" VerticalAlignment="Top">
+        <StackPanel Orientation="Horizontal" Height="100">
             <TextBox Name="userNameTextbox" Width="200"></TextBox>
             <PasswordBox Name="passwordTextbox" Width="200"></PasswordBox>
             <Button Click="Button_Click">Authenticate</Button>
+        </StackPanel>
+            <ListBox Name="Messages"></ListBox>
         </StackPanel>
     </Grid>
 </Page>
