@@ -98,6 +98,12 @@ namespace WinRtPushoverClient
             {
                 await this.checkDeviceRegistered();
                 var startupMessages = await this.pushoverApi.GetMessages();
+                if (startupMessages.Any())
+                {
+                    startupMessages = startupMessages.OrderByDescending(m => m.Id).ToList();
+                    await this.pushoverApi.UpdateToLastMessage(startupMessages[0].Id);
+                }
+
                 return startupMessages.AsEnumerable();
             }).AsAsyncOperation();
         }

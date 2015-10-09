@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -31,7 +32,13 @@ namespace WinRtPushoverClient
             Post
         }
 
-        private const string ApiUrlBase = "https://api.pushover.net/1/";   
+        private struct ApiResponse
+        {
+            public bool Success;
+            public Dictionary<string, Object> Content;
+        }
+
+        private const string ApiUrlBase = "https://api.pushover.net/1/";
 
         public async Task<string> PopulateUserSecretFromServer(string username, string password)
         {
@@ -43,7 +50,7 @@ namespace WinRtPushoverClient
 
             var result = await this.makeApiRequest(HttpMethod.Post, "users/login.json", requestParams, true, false);
             Object secret;
-            if (!result.TryGetValue("secret", out secret))
+            if (!result.Content.TryGetValue("secret", out secret))
             {
                 Debug.WriteLine("WinRtPushoverClient: Failed to get Secret from server");
             }
@@ -63,7 +70,7 @@ namespace WinRtPushoverClient
 
             var result = await this.makeApiRequest(HttpMethod.Post, "devices.json", requestParams, true, false);
             Object id;
-            if (result.TryGetValue("id", out id))
+            if (result.Content.TryGetValue("id", out id))
             {
                 device.Id = id.ToString();
             }
@@ -79,25 +86,39 @@ namespace WinRtPushoverClient
             var result = await this.makeApiRequest(HttpMethod.Get, "messages.json", requestParams, true, true);
 
             Object messages;
-            if (result.TryGetValue("messages", out messages))
+            if (result.Content.TryGetValue("messages", out messages))
             {
-                foreach(var message in messages as Array)
+                foreach (var message in messages as JArray)
                 {
+                    var msg = new NotificationMessage()
+                    {
+                        Application = new NotificationApplication(),
+                        Message = message.SelectToken("message").ToString(),
+                        Title = message.SelectToken("title").ToString(),
+                        Id = message.SelectToken("id").ToString(),
+                        Umid = message.SelectToken("umid").ToString()
+                    };
 
+                    notificationMessages.Add(msg);
                 }
             }
 
             return notificationMessages;
         }
 
-        public void DeleteMessages(int latestMessage)
+        public async Task UpdateToLastMessage(string latestMessage)
         {
+            var requestParams = new Dictionary<string, string>()
+            {
+                { "message", latestMessage }
+            };
 
+            var result = await this.makeApiRequest(HttpMethod.Post, "devices/" + this.Device.Id + "/update_highest_message.json", requestParams, true, false);
         }
 
-        private async Task<Dictionary<string, Object>> makeApiRequest(HttpMethod method, string endpoint, Dictionary<string, string> requestParams, bool includeSecret, bool includeDeviceId)
+        private async Task<ApiResponse> makeApiRequest(HttpMethod method, string endpoint, Dictionary<string, string> requestParams, bool includeSecret, bool includeDeviceId)
         {
-            Dictionary<string, Object> result = null;
+            var apiRepsonse = new ApiResponse();
             var client = new HttpClient();
 
             var builder = new UriBuilder(ApiUrlBase + endpoint);
@@ -123,7 +144,7 @@ namespace WinRtPushoverClient
                     if (response.IsSuccessStatusCode)
                     {
                         var responseContent = await response.Content.ReadAsStringAsync();
-                        result = JsonConvert.DeserializeObject<Dictionary<string, Object>>(responseContent);
+                        apiRepsonse.Content = JsonConvert.DeserializeObject<Dictionary<string, Object>>(responseContent);
                     }
                     break;
 
@@ -146,13 +167,13 @@ namespace WinRtPushoverClient
                     if (response.IsSuccessStatusCode)
                     {
                         var responseContent = await response.Content.ReadAsStringAsync();
-                        result = JsonConvert.DeserializeObject<Dictionary<string, Object>>(responseContent);
+                        apiRepsonse.Content = JsonConvert.DeserializeObject<Dictionary<string, Object>>(responseContent);
                     }
 
                     break;
             }
 
-            return result;
+            return apiRepsonse;
         }
 
         private string ToPercentEncoding(Dictionary<string, string> pairs)
