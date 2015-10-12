@@ -8,12 +8,25 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
+using Windows.Networking.Sockets;
+using Windows.Storage.Streams;
 
 namespace WinRtPushoverClient
 {
-    
+    public enum WebSocketMessage
+    {
+        KeepAlive,
+        NewMessage,
+        Refresh,
+        Error
+    }
+
+    public delegate void WebSocketServerMessage(WebSocketMessage message);
+
     class PushoverApi
     {
+        public event WebSocketServerMessage WebSocketServerMessageRecieved;
+
         public string UserSecret
         {
             get;
@@ -39,6 +52,9 @@ namespace WinRtPushoverClient
         }
 
         private const string ApiUrlBase = "https://api.pushover.net/1/";
+        private const string WebSocketUrlBase = "wss://client.pushover.net/push";
+        private MessageWebSocket webSocket;
+        private DataWriter dataWriter;
 
         public async Task<string> PopulateUserSecretFromServer(string username, string password)
         {
@@ -56,6 +72,27 @@ namespace WinRtPushoverClient
             }
             this.UserSecret = secret.ToString();
             return this.UserSecret;
+        }
+
+        public async Task ConnectWebSocket()
+        {
+            webSocket = new MessageWebSocket();
+            webSocket.Control.MessageType = SocketMessageType.Utf8;
+            webSocket.MessageReceived += MessageWebSocket_MessageReceived;
+            webSocket.Closed += MessageWebSocket_Closed;
+
+            dataWriter = new DataWriter(messageWebSocket.OutputStream);
+            await webSocket.ConnectAsync(new Uri(WebSocketUrlBase));
+
+            dataWriter.WriteString("login:" + this.Device.Id + ":" + this.UserSecret + "\n");
+
+            // Send the data as one complete message.
+            await dataWriter.StoreAsync();
+        }
+        public async Task DisconnectWebSocket()
+        {
+            messageWebSocket.Close(1000, "Closed due to user request.");
+            messageWebSocket = null;
         }
 
         public async Task<DeviceInfo> RegisterDevice(string deviceName)
@@ -188,6 +225,38 @@ namespace WinRtPushoverClient
             }
 
             return String.Join("&", joinedPairs);
+        }
+
+        private void MessageWebSocket_Closed(IWebSocket sender, WebSocketClosedEventArgs args)
+        {
+            Debug.WriteLine("PushoverApi : Websocket Closed");
+        }
+
+        private async void MessageWebSocket_MessageReceived(MessageWebSocket sender, MessageWebSocketMessageReceivedEventArgs args)
+        {
+            using (DataReader reader = args.GetDataReader())
+            {
+                reader.UnicodeEncoding = Windows.Storage.Streams.UnicodeEncoding.Utf8;
+
+                string read = reader.ReadString(reader.UnconsumedBufferLength);
+
+                switch(read)
+                {
+                    case "#":
+                        this.WebSocketServerMessageRecieved(WebSocketMessage.KeepAlive);
+                        break;
+                    case "!":
+                        this.WebSocketServerMessageRecieved(WebSocketMessage.NewMessage);
+                        break;
+                    case "R":
+                        await this.DisconnectWebSocket();
+                        await this.ConnectWebSocket();
+                        break;
+                    case "E":
+                        this.WebSocketServerMessageRecieved(WebSocketMessage.Error);
+                        break;
+                }                
+            }
         }
     }
 

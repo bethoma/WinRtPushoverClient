@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -18,7 +19,7 @@ namespace BasicClient
         {
             this.InitializeComponent();
 
-            pushoverClient = new PushoverClient("WinRtClient");
+            pushoverClient = new PushoverClient("WinRtClient1");
         }
 
         private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -27,6 +28,7 @@ namespace BasicClient
             switch(initResult)
             {
                 case InitializationResult.Success:
+                    this.pushoverClient.MessagesReceived += PushoverClient_NewNotification;
                     var messages = await this.pushoverClient.Start();
                     foreach (var msg in messages)
                     {
@@ -36,6 +38,17 @@ namespace BasicClient
                 case InitializationResult.AuthenticationRequired:
                     await new MessageDialog("Authentication required").ShowAsync();
                     break;
+            }
+        }
+
+        private void PushoverClient_NewNotification(IEnumerable<NotificationMessage> messages)
+        {
+            foreach (var msg in messages)
+            {
+                this.Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, (() => 
+                {
+                    this.Messages.Items.Add(msg.Title);
+                }));
             }
         }
 

@@ -9,7 +9,11 @@ using Windows.Storage;
 
 namespace WinRtPushoverClient
 {
-    public delegate void NewNotificationHandler(NotificationMessage message);
+    public delegate void MessagesReceivedHandler(IEnumerable<NotificationMessage> messages);
+
+    public delegate void EmergencyMessagesRecievednHandler(IEnumerable<NotificationMessage> emergencyMessages);
+
+    public delegate void ErrorHandler(ClientError error, string message);
 
     //const string UserSecretResourceName = "UserSecret";
 
@@ -28,14 +32,20 @@ namespace WinRtPushoverClient
         Error
     }
 
+    public enum ClientError
+    {
+        UnknownError,
+        AuthenticationFailed,
+        DeviceAlreadyRegistered
+    }
+
     public sealed class PushoverClient
     {
-        /// <summary>
-        /// Gets the current volume
-        /// </summary>
-        public event NewNotificationHandler NewNotification;
+        public event MessagesReceivedHandler MessagesReceived;
 
-        private bool isAuthenticated;
+        public event EmergencyMessagesRecievednHandler EmergencyMessagesReceived;
+
+        public event ErrorHandler OnError;
 
         private PushoverApi pushoverApi;
 
@@ -56,7 +66,8 @@ namespace WinRtPushoverClient
                 if (null != pushoverApi)
                     return InitializationResult.AlreadyInitalized;
 
-                pushoverApi = new PushoverApi();
+                this.pushoverApi = new PushoverApi();
+                this.pushoverApi.WebSocketServerMessageRecieved += PushoverApi_WebSocketServerMessageRecieved;
 
                 var vault = new PasswordVault();
                 try
@@ -68,16 +79,24 @@ namespace WinRtPushoverClient
                         var secret = vault.Retrieve("PushoverDevice_" + this.deviceInfo.Name + " _UserSecret", "UserSecret").Password;
                         pushoverApi.UserSecret = secret;
                     }
-                    isAuthenticated = true;
                 }
                 catch(Exception)
                 {
-                    isAuthenticated = false;
                     return InitializationResult.AuthenticationRequired;
                 }
 
                 return InitializationResult.Success;
             }).AsAsyncOperation();
+        }
+
+        private async void PushoverApi_WebSocketServerMessageRecieved(WebSocketMessage message)
+        {
+            switch(message)
+            {
+                case WebSocketMessage.NewMessage:
+                    this.MessagesReceived(await this.getMessagesAndMoveToHead());
+                    break;
+            }
         }
 
         public IAsyncOperation<AuthenticationResult> Authenticate(string username, string password)
@@ -104,8 +123,15 @@ namespace WinRtPushoverClient
                     await this.pushoverApi.UpdateToLastMessage(startupMessages[0].Id);
                 }
 
-                return startupMessages.AsEnumerable();
+                await this.pushoverApi.ConnectWebSocket();
+                var messages = await this.getMessagesAndMoveToHead();
+                return messages.AsEnumerable();
             }).AsAsyncOperation();
+        }
+
+        public IAsyncAction AcknowledgeEmergenyMessage(NotificationMessage emergencyMessage)
+        {
+            throw new NotImplementedException();
         }
 
         private async Task checkDeviceRegistered()
@@ -125,6 +151,18 @@ namespace WinRtPushoverClient
             }
 
             this.pushoverApi.Device = this.deviceInfo;
+        }
+
+        private async Task<List<NotificationMessage>> getMessagesAndMoveToHead()
+        {
+            var messages = await this.pushoverApi.GetMessages();
+            if (messages.Any())
+            {
+                messages = messages.OrderByDescending(m => m.Id).ToList();
+                await this.pushoverApi.UpdateToLastMessage(messages[0].Id);
+            }
+
+            return messages;
         }
     }
 }

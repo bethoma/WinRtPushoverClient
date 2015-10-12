@@ -6,6 +6,11 @@ using System.Threading.Tasks;
 
 namespace WinRtPushoverClient
 {
+    public enum MessagePriority
+    {
+        Normal,
+        Emergency
+    }
     public sealed class NotificationMessage
     {
         public string Id
